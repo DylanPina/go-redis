@@ -1,12 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"net"
 	"os"
 	"strconv"
-	"strings"
 )
 
 func main() {
@@ -18,12 +18,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to bind to port %d: %s\n", *port, err.Error())
 		os.Exit(1)
 	}
-
 	for {
 		conn, err := l.Accept()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error accepting connection: %s", err.Error())
-			os.Exit(1)
+			continue
 		}
 
 		go handleConnection(conn)
@@ -33,21 +32,15 @@ func main() {
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
 
-	buf := make([]byte, 1024)
-	n, err := conn.Read(buf)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error reading from connection: %s", err.Error())
-		return
+	scanner := bufio.NewScanner(conn)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if err := scanner.Err(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading from connection: %s", err.Error())
+			return
+		}
+
+		fmt.Printf("Received command: %s\n", line)
+		conn.Write([]byte("+PONG\r\n"))
 	}
-
-	request := string(buf[:n])
-	fmt.Printf("Received data: %s\n", request)
-
-	if strings.TrimSpace(request) != "PING" {
-		fmt.Fprintf(os.Stderr, "Expected PING, got: %s", request)
-		conn.Write([]byte("-ERR unknown command\r\n"))
-		return
-	}
-
-	conn.Write([]byte("+PONG\r\n"))
 }
