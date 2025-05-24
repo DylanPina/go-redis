@@ -13,71 +13,72 @@ import (
 
 type (
 	// RESP protocol types
-	RespType         any
-	RespSimpleString string
-	RespError        string
-	RespInteger      int64
-	RespBulkString   string
-	RespArray        []RespType
+	RESPType         any
+	RESPSimpleString string
+	RESPError        string
+	RESPInteger      int64
+	RESPBulkString   string
+	RESPArray        []RESPType
 )
 
 const (
 	// RESP protocol prefixes
-	RespSimpleStringPrefix = '+'
-	RespErrorPrefix        = '-'
-	RespIntegerPrefix      = ':'
-	RespBulkStringPrefix   = '$'
-	RespArrayPrefix        = '*'
+	RESPSimpleStringPrefix = '+'
+	RESPErrorPrefix        = '-'
+	RESPIntegerPrefix      = ':'
+	RESPBulkStringPrefix   = '$'
+	RESPArrayPrefix        = '*'
 )
 
 const (
 	// RESP protocol commands
-	RespCommandPing = "PING"
-	RespCommandEcho = "ECHO"
-	RespCommandSet  = "SET"
-	RespCommandGet  = "GET"
+	CommandPing = "PING"
+	CommandPong = "PONG"
+	CommandEcho = "ECHO"
+	CommandSet  = "SET"
+	CommandGet  = "GET"
 )
 
-func Parse(reader *bufio.Reader) (RespType, error) {
+func Parse(reader *bufio.Reader) (RESPType, error) {
 	prefix, err := reader.ReadByte()
 	if err != nil {
 		return nil, err
 	}
 
 	switch prefix {
-	case RespSimpleStringPrefix:
+	case RESPSimpleStringPrefix:
 		return parseSimpleString(reader)
-	case RespErrorPrefix:
+	case RESPErrorPrefix:
 		return parseError(reader)
-	case RespIntegerPrefix:
+	case RESPIntegerPrefix:
 		return parseInteger(reader)
-	case RespBulkStringPrefix:
+	case RESPBulkStringPrefix:
 		return parseBulkString(reader)
-	case RespArrayPrefix:
+	case RESPArrayPrefix:
 		return parseArray(reader)
 	default:
 		return nil, fmt.Errorf("unknown RESP type: %c", prefix)
 	}
 }
 
-func parseSimpleString(reader *bufio.Reader) (RespSimpleString, error) {
-	line, err := readRespLine(reader)
+func parseSimpleString(reader *bufio.Reader) (RESPSimpleString, error) {
+	line, err := readRESPLine(reader)
 	if err != nil {
 		return "", err
 	}
-	return RespSimpleString(line), nil
+	return RESPSimpleString(line), nil
 }
 
-func parseError(reader *bufio.Reader) (RespError, error) {
-	line, err := readRespLine(reader)
+func parseError(reader *bufio.Reader) (RESPError, error) {
+	line, err := readRESPLine(reader)
 	if err != nil {
 		return "", err
 	}
-	return RespError(line), nil
+	return RESPError(line), nil
 }
 
-func parseInteger(reader *bufio.Reader) (RespInteger, error) {
-	line, err := readRespLine(reader)
+func parseInteger(reader *bufio.Reader) (RESPInteger, error) {
+	line, err := readRESPLine(reader)
 	if err != nil {
 		return 0, err
 	}
@@ -85,11 +86,11 @@ func parseInteger(reader *bufio.Reader) (RespInteger, error) {
 	if err != nil {
 		return 0, err
 	}
-	return RespInteger(val), nil
+	return RESPInteger(val), nil
 }
 
-func parseBulkString(reader *bufio.Reader) (RespBulkString, error) {
-	line, err := readRespLine(reader)
+func parseBulkString(reader *bufio.Reader) (RESPBulkString, error) {
+	line, err := readRESPLine(reader)
 	if err != nil {
 		return "", err
 	}
@@ -107,11 +108,11 @@ func parseBulkString(reader *bufio.Reader) (RespBulkString, error) {
 		return "", err
 	}
 
-	return RespBulkString(string(buf[:length])), nil
+	return RESPBulkString(string(buf[:length])), nil
 }
 
-func parseArray(reader *bufio.Reader) (RespArray, error) {
-	line, err := readRespLine(reader)
+func parseArray(reader *bufio.Reader) (RESPArray, error) {
+	line, err := readRESPLine(reader)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +125,7 @@ func parseArray(reader *bufio.Reader) (RespArray, error) {
 		return nil, nil
 	}
 
-	result := make(RespArray, 0, count)
+	result := make(RESPArray, 0, count)
 	for range count {
 		elem, err := Parse(reader)
 		if err != nil {
@@ -135,7 +136,7 @@ func parseArray(reader *bufio.Reader) (RespArray, error) {
 	return result, nil
 }
 
-func readRespLine(reader *bufio.Reader) (string, error) {
+func readRESPLine(reader *bufio.Reader) (string, error) {
 	line, err := reader.ReadString('\n')
 	if err != nil {
 		return "", err

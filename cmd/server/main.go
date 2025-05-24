@@ -45,34 +45,34 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 
-		req, ok := val.(resp.RespArray)
+		req, ok := val.(resp.RESPArray)
 		if !ok {
 			fmt.Fprintf(os.Stderr, "Expected RESP array, got %T\n", val)
-			fmt.Fprint(conn, "-ERR Expected RESP array\r\n")
-			continue
+			writeRESPError(conn, fmt.Errorf("expected RESP array, got %T", val))
+			return
 		}
 
-		handleResp(conn, req)
+		handleRESP(conn, req)
 	}
 }
 
-func handleResp(conn net.Conn, req resp.RespArray) {
+func handleRESP(conn net.Conn, req resp.RESPArray) {
 	if len(req) == 0 {
-		writeRespError(conn, fmt.Errorf("empty request"))
+		writeRESPError(conn, fmt.Errorf("empty request"))
 		return
 	}
 
-	cmd, ok := req[0].(resp.RespBulkString)
+	cmd, ok := req[0].(resp.RESPBulkString)
 	if !ok {
-		writeRespError(conn, fmt.Errorf("first element is not a bulk string"))
+		writeRESPError(conn, fmt.Errorf("first element is not a bulk string"))
 		return
 	}
 
-	switch cmdStr := string(cmd); cmdStr {
-	case resp.RespCommandPing:
+	switch cmd {
+	case resp.CommandPing:
 		handlePingCommand(conn)
 
-	case resp.RespCommandEcho:
+	case resp.CommandEcho:
 		handleEchoCommand(conn, req)
 
 	default:
@@ -81,37 +81,45 @@ func handleResp(conn net.Conn, req resp.RespArray) {
 }
 
 func handlePingCommand(conn net.Conn) {
-	writeRespSimpleString(conn, "PONG")
+	writeRESPSimpleString(conn, resp.CommandPong)
 }
 
-func handleEchoCommand(conn net.Conn, req resp.RespArray) {
+func handleEchoCommand(conn net.Conn, req resp.RESPArray) {
 	if len(req) < 2 {
-		writeRespError(conn, fmt.Errorf("ECHO command requires a message"))
+		writeRESPError(conn, fmt.Errorf("ECHO command requires a message"))
 		return
 	}
 
-	msg, ok := req[1].(resp.RespBulkString)
+	msg, ok := req[1].(resp.RESPBulkString)
+
 	if !ok {
-		writeRespError(conn, fmt.Errorf("second element is not a bulk string"))
+		writeRESPError(conn, fmt.Errorf("second element is not a bulk string"))
 		return
 	}
 
-	fmt.Fprintf(conn, "+%s\r\n", msg)
+	writeRESPBulkString(conn, msg)
 }
 
-func handleUnknownCommand(conn net.Conn, cmd resp.RespBulkString) {
-	writeRespError(conn, fmt.Errorf("unknown command: %s", cmd))
+func handleUnknownCommand(conn net.Conn, cmd resp.RESPBulkString) {
+	writeRESPError(conn, fmt.Errorf("unknown command: %s", cmd))
 }
 
-func writeRespError(conn net.Conn, err error) {
+func writeRESPError(conn net.Conn, err error) {
 	_, err = fmt.Fprintf(conn, "-ERR %s\r\n", err.Error())
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing to connection: %s\n", err.Error())
 	}
 }
 
-func writeRespSimpleString(conn net.Conn, msg string) {
+func writeRESPSimpleString(conn net.Conn, msg resp.RESPSimpleString) {
 	_, err := fmt.Fprintf(conn, "+%s\r\n", msg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing to connection: %s\n", err.Error())
+	}
+}
+
+func writeRESPBulkString(conn net.Conn, msg resp.RESPBulkString) {
+	_, err := fmt.Fprintf(conn, "$%d\r\n%s\r\n", len(msg), msg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing to connection: %s\n", err.Error())
 	}
