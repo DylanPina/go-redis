@@ -1,6 +1,6 @@
 // resp is a Redis Serialization Protocol (RESP) parser.
 // See https://redis.io/docs/reference/protocol-spec/#resp-protocol-description
-package resp
+package redis
 
 import (
 	"bufio"

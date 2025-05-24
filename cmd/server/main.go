@@ -37,7 +37,7 @@ func handleConnection(conn net.Conn) {
 	reader := bufio.NewReader(conn)
 
 	for {
-		val, err := resp.Parse(reader)
+		val, err := redis.Parse(reader)
 		if err != nil {
 			if err != io.EOF {
 				fmt.Fprintf(os.Stderr, "Error parsing RESP: %v\n", err)
@@ -45,7 +45,7 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 
-		req, ok := val.(resp.RESPArray)
+		req, ok := val.(redis.RESPArray)
 		if !ok {
 			fmt.Fprintf(os.Stderr, "Expected RESP array, got %T\n", val)
 			writeRESPError(conn, fmt.Errorf("expected RESP array, got %T", val))
@@ -56,24 +56,30 @@ func handleConnection(conn net.Conn) {
 	}
 }
 
-func handleRESP(conn net.Conn, req resp.RESPArray) {
+func handleRESP(conn net.Conn, req redis.RESPArray) {
 	if len(req) == 0 {
 		writeRESPError(conn, fmt.Errorf("empty request"))
 		return
 	}
 
-	cmd, ok := req[0].(resp.RESPBulkString)
+	cmd, ok := req[0].(redis.RESPBulkString)
 	if !ok {
 		writeRESPError(conn, fmt.Errorf("first element is not a bulk string"))
 		return
 	}
 
 	switch cmd {
-	case resp.CommandPing:
+	case redis.CommandPing:
 		handlePingCommand(conn)
 
-	case resp.CommandEcho:
+	case redis.CommandEcho:
 		handleEchoCommand(conn, req)
+
+	case redis.CommandSet:
+		handleSetCommand(conn, req)
+
+	case redis.CommandGet:
+		handleGetCommand(conn, req)
 
 	default:
 		handleUnknownCommand(conn, cmd)
@@ -81,16 +87,16 @@ func handleRESP(conn net.Conn, req resp.RESPArray) {
 }
 
 func handlePingCommand(conn net.Conn) {
-	writeRESPSimpleString(conn, resp.CommandPong)
+	writeRESPSimpleString(conn, redis.CommandPong)
 }
 
-func handleEchoCommand(conn net.Conn, req resp.RESPArray) {
+func handleEchoCommand(conn net.Conn, req redis.RESPArray) {
 	if len(req) < 2 {
 		writeRESPError(conn, fmt.Errorf("ECHO command requires a message"))
 		return
 	}
 
-	msg, ok := req[1].(resp.RESPBulkString)
+	msg, ok := req[1].(redis.RESPBulkString)
 
 	if !ok {
 		writeRESPError(conn, fmt.Errorf("second element is not a bulk string"))
@@ -100,7 +106,54 @@ func handleEchoCommand(conn net.Conn, req resp.RESPArray) {
 	writeRESPBulkString(conn, msg)
 }
 
-func handleUnknownCommand(conn net.Conn, cmd resp.RESPBulkString) {
+func handleSetCommand(conn net.Conn, req redis.RESPArray) {
+	if len(req) < 3 {
+		writeRESPError(conn, fmt.Errorf("SET command requires a key and value"))
+		return
+	}
+
+	key, ok := req[1].(redis.RESPBulkString)
+	if !ok {
+		writeRESPError(conn, fmt.Errorf("second element is not a bulk string (key)"))
+		return
+	}
+
+	val, ok := req[2].(redis.RESPBulkString)
+	if !ok {
+		writeRESPNullBulkString(conn)
+		return
+	}
+
+	redis.Set(string(key), string(val))
+	writeRESPSimpleString(conn, "OK")
+}
+
+func handleGetCommand(conn net.Conn, req redis.RESPArray) {
+	if len(req) < 2 {
+		writeRESPError(conn, fmt.Errorf("GET command requires a key"))
+		return
+	}
+	if len(req) > 2 {
+		writeRESPError(conn, fmt.Errorf("GET command takes only one argument (key)"))
+		return
+	}
+
+	key, ok := req[1].(redis.RESPBulkString)
+	if !ok {
+		writeRESPError(conn, fmt.Errorf("second element is not a bulk string (key)"))
+		return
+	}
+
+	val, exists := redis.Get(string(key))
+	if !exists {
+		writeRESPNullBulkString(conn)
+		return
+	}
+
+	writeRESPBulkString(conn, redis.RESPBulkString(val))
+}
+
+func handleUnknownCommand(conn net.Conn, cmd redis.RESPBulkString) {
 	writeRESPError(conn, fmt.Errorf("unknown command: %s", cmd))
 }
 
@@ -111,15 +164,22 @@ func writeRESPError(conn net.Conn, err error) {
 	}
 }
 
-func writeRESPSimpleString(conn net.Conn, msg resp.RESPSimpleString) {
+func writeRESPSimpleString(conn net.Conn, msg redis.RESPSimpleString) {
 	_, err := fmt.Fprintf(conn, "+%s\r\n", msg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing to connection: %s\n", err.Error())
 	}
 }
 
-func writeRESPBulkString(conn net.Conn, msg resp.RESPBulkString) {
+func writeRESPBulkString(conn net.Conn, msg redis.RESPBulkString) {
 	_, err := fmt.Fprintf(conn, "$%d\r\n%s\r\n", len(msg), msg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing to connection: %s\n", err.Error())
+	}
+}
+
+func writeRESPNullBulkString(conn net.Conn) {
+	_, err := fmt.Fprint(conn, "$-1\r\n")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error writing to connection: %s\n", err.Error())
 	}
