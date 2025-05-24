@@ -4,9 +4,12 @@ import (
 	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strconv"
+
+	"github.com/DylanPina/go-redis/internal/redis"
 )
 
 func main() {
@@ -31,16 +34,85 @@ func main() {
 
 func handleConnection(conn net.Conn) {
 	defer conn.Close()
+	reader := bufio.NewReader(conn)
 
-	scanner := bufio.NewScanner(conn)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if err := scanner.Err(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading from connection: %s", err.Error())
+	for {
+		val, err := resp.Parse(reader)
+		if err != nil {
+			if err != io.EOF {
+				fmt.Fprintf(os.Stderr, "Error parsing RESP: %v\n", err)
+			}
 			return
 		}
 
-		fmt.Printf("Received command: %s\n", line)
-		conn.Write([]byte("+PONG\r\n"))
+		req, ok := val.(resp.RespArray)
+		if !ok {
+			fmt.Fprintf(os.Stderr, "Expected RESP array, got %T\n", val)
+			fmt.Fprint(conn, "-ERR Expected RESP array\r\n")
+			continue
+		}
+
+		handleResp(conn, req)
+	}
+}
+
+func handleResp(conn net.Conn, req resp.RespArray) {
+	if len(req) == 0 {
+		writeRespError(conn, fmt.Errorf("empty request"))
+		return
+	}
+
+	cmd, ok := req[0].(resp.RespBulkString)
+	if !ok {
+		writeRespError(conn, fmt.Errorf("first element is not a bulk string"))
+		return
+	}
+
+	switch cmdStr := string(cmd); cmdStr {
+	case resp.RespCommandPing:
+		handlePingCommand(conn)
+
+	case resp.RespCommandEcho:
+		handleEchoCommand(conn, req)
+
+	default:
+		handleUnknownCommand(conn, cmd)
+	}
+}
+
+func handlePingCommand(conn net.Conn) {
+	writeRespSimpleString(conn, "PONG")
+}
+
+func handleEchoCommand(conn net.Conn, req resp.RespArray) {
+	if len(req) < 2 {
+		writeRespError(conn, fmt.Errorf("ECHO command requires a message"))
+		return
+	}
+
+	msg, ok := req[1].(resp.RespBulkString)
+	if !ok {
+		writeRespError(conn, fmt.Errorf("second element is not a bulk string"))
+		return
+	}
+
+	fmt.Fprintf(conn, "+%s\r\n", msg)
+}
+
+func handleUnknownCommand(conn net.Conn, cmd resp.RespBulkString) {
+	writeRespError(conn, fmt.Errorf("unknown command: %s", cmd))
+}
+
+func writeRespError(conn net.Conn, err error) {
+	_, err = fmt.Fprintf(conn, "-ERR %s\r\n", err.Error())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing to connection: %s\n", err.Error())
+	}
+}
+
+func writeRespSimpleString(conn net.Conn, msg string) {
+	_, err := fmt.Fprintf(conn, "+%s\r\n", msg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing to connection: %s\n", err.Error())
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -26,7 +27,7 @@ func TestPong(t *testing.T) {
 	defer conn.Close()
 
 	// Send a PING command
-	_, err = conn.Write([]byte("PING\r\n"))
+	_, err = conn.Write([]byte("*1\r\n$4\r\nPING\r\n"))
 	if err != nil {
 		t.Fatalf("Failed to send PING command: %v", err)
 	}
@@ -34,11 +35,13 @@ func TestPong(t *testing.T) {
 	// Listen for PONG response
 	buf := make([]byte, 1024)
 	n, err := conn.Read(buf)
-	if err != nil {
+	if err != nil && err != io.EOF {
 		t.Fatalf("Error reading from connection: %v", err)
 	}
 
-	if string(buf[:n]) != "PONG\r\n" {
+	t.Logf("Received response: %s", string(buf[:n]))
+
+	if string(buf[:n]) != "+PONG\r\n" {
 		t.Fatalf("Expected PONG, got: %s", string(buf[:n]))
 	}
 }
