@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/DylanPina/go-redis/internal/redis"
 )
@@ -52,6 +53,7 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 
+		fmt.Printf("Received request: %v\n", req)
 		handleRESP(conn, req)
 	}
 }
@@ -124,7 +126,39 @@ func handleSetCommand(conn net.Conn, req redis.RESPArray) {
 		return
 	}
 
-	redis.Set(string(key), string(val))
+	expiration := int64(-1) // Default to no expiration
+	if len(req) == 5 {
+		pxStr, ok := req[3].(redis.RESPBulkString)
+		if !ok {
+			writeRESPError(conn, fmt.Errorf("fourth element is not a bulk string"))
+			return
+		}
+		if strings.ToUpper(string(pxStr)) != redis.CommandPx {
+			writeRESPError(conn, fmt.Errorf("fourth element must be 'PX' for expiration"))
+			return
+		}
+
+		expirationStr, ok := req[4].(redis.RESPBulkString)
+		if !ok {
+			writeRESPError(conn, fmt.Errorf("fifth element is not a bulk string (expiration)"))
+			return
+		}
+
+		exp, err := strconv.ParseInt(string(expirationStr), 10, 64)
+		if err != nil {
+			writeRESPError(conn, fmt.Errorf("invalid expiration value: %s", err.Error()))
+			return
+		}
+
+		if exp < 0 {
+			writeRESPError(conn, fmt.Errorf("expiration must be a non-negative integer"))
+			return
+		}
+
+		expiration = exp
+	}
+
+	redis.Set(string(key), string(val), expiration)
 	writeRESPSimpleString(conn, "OK")
 }
 
@@ -144,8 +178,8 @@ func handleGetCommand(conn net.Conn, req redis.RESPArray) {
 		return
 	}
 
-	val, exists := redis.Get(string(key))
-	if !exists {
+	val, ok := redis.Get(string(key))
+	if !ok {
 		writeRESPNullBulkString(conn)
 		return
 	}

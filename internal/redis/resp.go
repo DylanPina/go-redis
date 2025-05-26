@@ -37,6 +37,7 @@ const (
 	CommandEcho = "ECHO"
 	CommandSet  = "SET"
 	CommandGet  = "GET"
+	CommandPx   = "PX"
 )
 
 func Parse(reader *bufio.Reader) (RESPType, error) {

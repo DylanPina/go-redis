@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"testing"
+	"time"
 
 	redisServer "github.com/DylanPina/go-redis/internal/redis"
 	redisClient "github.com/redis/go-redis/v9"
@@ -22,9 +23,7 @@ func TestMain(m *testing.M) {
 // TestPing tests the Redis server's ability to respond to a PING command
 func TestPong(t *testing.T) {
 	// Create a new Redis rdb
-	rdb := redisClient.NewClient(&redisClient.Options{
-		Addr: "localhost:" + strconv.Itoa(*TEST_PORT),
-	})
+	rdb := createClient()
 
 	// Ping the server to check if it's running
 	ctx := context.Background()
@@ -43,9 +42,7 @@ func TestPong(t *testing.T) {
 // TestEcho tests the Redis server's ability to respond to an ECHO command
 func TestEcho(t *testing.T) {
 	// Create a new Redis rdb
-	rdb := redisClient.NewClient(&redisClient.Options{
-		Addr: "localhost:" + strconv.Itoa(*TEST_PORT),
-	})
+	rdb := createClient()
 
 	// Echo a message to the server
 	ctx := context.Background()
@@ -65,15 +62,13 @@ func TestEcho(t *testing.T) {
 // TestSetGet tests the Redis server's ability to set and get a key-value pair
 func TestSetGet(t *testing.T) {
 	// Create a new Redis rdb
-	rdb := redisClient.NewClient(&redisClient.Options{
-		Addr: "localhost:" + strconv.Itoa(*TEST_PORT),
-	})
+	rdb := createClient()
 
 	// Set a key-value pair in the server
 	ctx := context.Background()
 	key := "testKey"
 	value := "testValue"
-	err := rdb.Do(ctx, redisServer.CommandSet, key, value, 0).Err()
+	err := rdb.Do(ctx, redisServer.CommandSet, key, value).Err()
 	if err != nil {
 		t.Fatalf("Failed to set key: %v", err)
 	}
@@ -89,4 +84,85 @@ func TestSetGet(t *testing.T) {
 	}
 
 	t.Logf("Set and Get successful: %s = %s", key, gotValue)
+}
+
+// TestSetGetNonExistentKey tests the Redis server's ability to handle non-existent keys
+func TestSetGetNonExistentKey(t *testing.T) {
+	// Create a new Redis rdb
+	rdb := createClient()
+
+	// Try to get a non-existent key
+	ctx := context.Background()
+	key := "nonExistentKey"
+	gotValue, err := rdb.Do(ctx, redisServer.CommandGet, key).Result()
+	if err == nil {
+		t.Fatalf("Expected error for non-existent key, got value: %s", gotValue)
+	}
+
+	if gotValue != nil {
+		t.Fatalf("Expected nil for non-existent key, got: %s", gotValue)
+	}
+
+	t.Logf("Get non-existent key successful, no value found for '%s'", key)
+}
+
+// TestSetGetWithExpiredKey tests the Redis server's ability to handle key expiration
+func TestSetGetWithExpiredKey(t *testing.T) {
+	// Create a new Redis rdb
+	rdb := createClient()
+
+	// Set a key-value pair with expiration
+	ctx := context.Background()
+	key := "tempKey"
+	value := "tempValue"
+	expiration := 100 // 0.1 seconds in milliseconds
+	err := rdb.Do(ctx, redisServer.CommandSet, key, value, redisServer.CommandPx, expiration).Err()
+	if err != nil {
+		t.Fatalf("Failed to set key with expiration: %v", err)
+	}
+
+	// Wait for the key to expire
+	time.Sleep(1000 * time.Millisecond)
+
+	// Try to get the value back from the server
+	gotValue, err := rdb.Do(ctx, redisServer.CommandGet, key).Result()
+	if err == nil {
+		t.Fatalf("Expected key to be expired, but got value: %s", gotValue)
+	}
+
+	t.Logf("Set with expiration successful, key '%s' is expired as expected", key)
+}
+
+// TestSetGetWithUnexpiredKey tests the Redis server's ability to handle keys that should not expire
+func TestSetGetWithUnexpiredKey(t *testing.T) {
+	// Create a new Redis rdb
+	rdb := createClient()
+
+	// Set a key-value pair without expiration
+	ctx := context.Background()
+	key := "permanentKey"
+	value := "permanentValue"
+	expiration := 100000 // 100 seconds in milliseconds
+	err := rdb.Do(ctx, redisServer.CommandSet, key, value, redisServer.CommandPx, expiration).Err()
+	if err != nil {
+		t.Fatalf("Failed to set key without expiration: %v", err)
+	}
+
+	// Get the value back from the server
+	gotValue, err := rdb.Do(ctx, redisServer.CommandGet, key).Result()
+	if err != nil {
+		t.Fatalf("Failed to get key: %v", err)
+	}
+
+	if gotValue != value {
+		t.Fatalf("Expected value '%s', got: %s", value, gotValue)
+	}
+
+	t.Logf("Set and Get without expiration successful: %s = %s", key, gotValue)
+}
+
+func createClient() *redisClient.Client {
+	return redisClient.NewClient(&redisClient.Options{
+		Addr: "localhost:" + strconv.Itoa(*TEST_PORT),
+	})
 }
