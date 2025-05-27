@@ -11,8 +11,8 @@ import (
 	"strings"
 )
 
+// RESP protocol types
 type (
-	// RESP protocol types
 	RESPType         any
 	RESPSimpleString string
 	RESPError        string
@@ -21,8 +21,8 @@ type (
 	RESPArray        []RESPType
 )
 
+// RESP protocol prefixes
 const (
-	// RESP protocol prefixes
 	RESPSimpleStringPrefix = '+'
 	RESPErrorPrefix        = '-'
 	RESPIntegerPrefix      = ':'
@@ -30,14 +30,22 @@ const (
 	RESPArrayPrefix        = '*'
 )
 
+// RESP protocol commands
 const (
-	// RESP protocol commands
-	CommandPing = "PING"
-	CommandPong = "PONG"
-	CommandEcho = "ECHO"
-	CommandSet  = "SET"
-	CommandGet  = "GET"
-	CommandPx   = "PX"
+	CommandPing   = "PING"
+	CommandPong   = "PONG"
+	CommandEcho   = "ECHO"
+	CommandSet    = "SET"
+	CommandGet    = "GET"
+	CommandPx     = "PX"
+	CommandConfig = "CONFIG"
+)
+
+// RESP protocol subcommands
+const (
+	// Config subcommands
+	SubcommandConfigDir        = "dir"
+	SubcommandConfigDBFileName = "dbfilename"
 )
 
 func Parse(reader *bufio.Reader) (RESPType, error) {

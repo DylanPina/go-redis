@@ -12,7 +12,11 @@ import (
 	redisClient "github.com/redis/go-redis/v9"
 )
 
-var TEST_PORT = flag.Int("port", 6379, "Port that the DNS server to listen on (default: 6379)")
+var (
+	testPort       = flag.Int("port", 6379, "Port that the DNS server to listen on (default: 6379)")
+	testDir        = flag.String("dir", "", "Directory where the Redis server is running (default: current directory)")
+	testDBFileName = flag.String("dbfilename", "dump.rdb", "Name of the Redis database file (default: dump.rdb)")
+)
 
 // TestMain is the entry point for the test suite
 func TestMain(m *testing.M) {
@@ -22,7 +26,6 @@ func TestMain(m *testing.M) {
 
 // TestPing tests the Redis server's ability to respond to a PING command
 func TestPong(t *testing.T) {
-	// Create a new Redis rdb
 	rdb := createClient()
 
 	// Ping the server to check if it's running
@@ -41,7 +44,6 @@ func TestPong(t *testing.T) {
 
 // TestEcho tests the Redis server's ability to respond to an ECHO command
 func TestEcho(t *testing.T) {
-	// Create a new Redis rdb
 	rdb := createClient()
 
 	// Echo a message to the server
@@ -61,7 +63,6 @@ func TestEcho(t *testing.T) {
 
 // TestSetGet tests the Redis server's ability to set and get a key-value pair
 func TestSetGet(t *testing.T) {
-	// Create a new Redis rdb
 	rdb := createClient()
 
 	// Set a key-value pair in the server
@@ -88,7 +89,6 @@ func TestSetGet(t *testing.T) {
 
 // TestSetGetNonExistentKey tests the Redis server's ability to handle non-existent keys
 func TestSetGetNonExistentKey(t *testing.T) {
-	// Create a new Redis rdb
 	rdb := createClient()
 
 	// Try to get a non-existent key
@@ -108,7 +108,6 @@ func TestSetGetNonExistentKey(t *testing.T) {
 
 // TestSetGetWithExpiredKey tests the Redis server's ability to handle key expiration
 func TestSetGetWithExpiredKey(t *testing.T) {
-	// Create a new Redis rdb
 	rdb := createClient()
 
 	// Set a key-value pair with expiration
@@ -135,7 +134,6 @@ func TestSetGetWithExpiredKey(t *testing.T) {
 
 // TestSetGetWithUnexpiredKey tests the Redis server's ability to handle keys that should not expire
 func TestSetGetWithUnexpiredKey(t *testing.T) {
-	// Create a new Redis rdb
 	rdb := createClient()
 
 	// Set a key-value pair without expiration
@@ -161,8 +159,46 @@ func TestSetGetWithUnexpiredKey(t *testing.T) {
 	t.Logf("Set and Get without expiration successful: %s = %s", key, gotValue)
 }
 
+func TestConfigSetGet(t *testing.T) {
+	// Create a new Redis rdb
+	rdb := createClient()
+
+	// Set configuration directory
+	ctx := context.Background()
+	targetDir := *testDir
+	err := rdb.Do(ctx, redisServer.CommandConfig, redisServer.CommandSet, redisServer.SubcommandConfigDir, targetDir).Err()
+	if err != nil {
+		t.Fatalf("Failed to set config: %v", err)
+	}
+
+	// Get the directory value back
+	gotDir, err := rdb.Do(ctx, redisServer.CommandConfig, redisServer.CommandGet, redisServer.SubcommandConfigDir).Result()
+	if err != nil {
+		t.Fatalf("Failed to get config directory: %v", err)
+	}
+
+	if gotDir != targetDir {
+		t.Fatalf("Expected config directory value '%s', got: %s", targetDir, gotDir)
+	}
+
+	// Set db file name
+	targetDBFileName := *testDBFileName
+	err = rdb.Do(ctx, redisServer.CommandConfig, redisServer.CommandSet, redisServer.SubcommandConfigDBFileName, targetDBFileName).Err()
+	if err != nil {
+		t.Fatalf("Failed to set config db filename: %v", err)
+	}
+
+	// Get the db file name value back
+	gotDbFileName, err := rdb.Do(ctx, redisServer.CommandConfig, redisServer.CommandGet, redisServer.SubcommandConfigDBFileName).Result()
+	if err != nil {
+		t.Fatalf("Failed to get config db filename: %v", err)
+	}
+
+	t.Logf("Config Set and Get successful: %s = %s", targetDBFileName, gotDbFileName)
+}
+
 func createClient() *redisClient.Client {
 	return redisClient.NewClient(&redisClient.Options{
-		Addr: "localhost:" + strconv.Itoa(*TEST_PORT),
+		Addr: "localhost:" + strconv.Itoa(*testPort),
 	})
 }

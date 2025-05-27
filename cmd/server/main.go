@@ -13,9 +13,21 @@ import (
 	"github.com/DylanPina/go-redis/internal/redis"
 )
 
+var (
+	port       = flag.Int("port", 6379, "Port that the DNS server to listen on (default: 6379)")
+	dir        = flag.String("dir", "", "Directory where the Redis server is running (default: current directory)")
+	dbFileName = flag.String("dbfilename", "dump.rdb", "Name of the Redis database file (default: dump.rdb)")
+)
+
 func main() {
-	port := flag.Int("port", 6379, "Port that the DNS server to listen on (default: 6379)")
 	flag.Parse()
+
+	redis.SetDirectory(*dir)
+	redis.SetDBFileName(*dbFileName)
+
+	fmt.Printf("Starting Redis server on port %d\n", *port)
+	fmt.Printf("Using directory: %s\n", redis.GetDirectory())
+	fmt.Printf("Using database file: %s\n", redis.GetDBFileName())
 
 	l, err := net.Listen("tcp", "0.0.0.0:"+strconv.Itoa(*port))
 	if err != nil {
@@ -82,6 +94,9 @@ func handleRESP(conn net.Conn, req redis.RESPArray) {
 
 	case redis.CommandGet:
 		handleGetCommand(conn, req)
+
+	case redis.CommandConfig:
+		handleConfigCommand(conn, req)
 
 	default:
 		handleUnknownCommand(conn, cmd)
@@ -185,6 +200,83 @@ func handleGetCommand(conn net.Conn, req redis.RESPArray) {
 	}
 
 	writeRESPBulkString(conn, redis.RESPBulkString(val))
+}
+
+func handleConfigCommand(conn net.Conn, req redis.RESPArray) {
+	if len(req) < 2 {
+		writeRESPError(conn, fmt.Errorf("CONFIG command requires a subcommand"))
+		return
+	}
+
+	subCmd, ok := req[1].(redis.RESPBulkString)
+	if !ok {
+		writeRESPError(conn, fmt.Errorf("second element is not a bulk string (subcommand)"))
+		return
+	}
+
+	switch subCmd {
+	case redis.CommandGet:
+		handleConfigGetCommand(conn, req)
+
+	case redis.CommandSet:
+		handleConfigSetCommand(conn, req)
+
+	default:
+		writeRESPError(conn, fmt.Errorf("unknown CONFIG subcommand: %s", subCmd))
+	}
+}
+
+func handleConfigGetCommand(conn net.Conn, req redis.RESPArray) {
+	if len(req) != 3 {
+		writeRESPError(conn, fmt.Errorf("CONFIG GET command requires a parameter"))
+		return
+	}
+
+	param, ok := req[2].(redis.RESPBulkString)
+	if !ok {
+		writeRESPError(conn, fmt.Errorf("third element is not a bulk string (parameter)"))
+		return
+	}
+
+	switch string(param) {
+	case redis.SubcommandConfigDir:
+		writeRESPBulkString(conn, redis.RESPBulkString(redis.GetDirectory()))
+	case redis.SubcommandConfigDBFileName:
+		writeRESPBulkString(conn, redis.RESPBulkString(redis.GetDBFileName()))
+	default:
+		writeRESPNullBulkString(conn)
+	}
+}
+
+func handleConfigSetCommand(conn net.Conn, req redis.RESPArray) {
+	if len(req) != 4 {
+		writeRESPError(conn, fmt.Errorf("CONFIG SET command requires a parameter and value"))
+		return
+	}
+
+	param, ok := req[2].(redis.RESPBulkString)
+	if !ok {
+		writeRESPError(conn, fmt.Errorf("third element is not a bulk string (parameter)"))
+		return
+	}
+
+	value, ok := req[3].(redis.RESPBulkString)
+	if !ok {
+		writeRESPError(conn, fmt.Errorf("fourth element is not a bulk string (value)"))
+		return
+	}
+
+	switch string(param) {
+	case redis.SubcommandConfigDir:
+		redis.SetDirectory(string(value))
+	case redis.SubcommandConfigDBFileName:
+		redis.SetDBFileName(string(value))
+	default:
+		writeRESPError(conn, fmt.Errorf("unknown CONFIG parameter: %s", param))
+		return
+	}
+
+	writeRESPSimpleString(conn, "OK")
 }
 
 func handleUnknownCommand(conn net.Conn, cmd redis.RESPBulkString) {
